@@ -1,0 +1,359 @@
+---
+title: "MA678 Homework 4"
+author: "Yaquan Yang"
+date: "10/4/2022"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Disclaimer (remove after you've read)!
+
+A few things to keep in mind :\
+1) Use `set.seed()` to make sure that the document produces the same random simulation as when you ran the code.\
+2) Use `refresh=0` for any `stan_glm()` or stan-based model. `lm()` or non-stan models don't need this!\
+3) You can type outside of the R chunks and make new R chunks where it's convenient. Make sure it's clear which questions you're answering.\
+4) Even if you're not too confident, please try giving an answer to the text responses!\
+5) Please don't print data in the document unless the question asks. It's good for you to do it to look at the data, but not as good for someone trying to read the document later on.\
+6) Check your document before submitting! Please put your name where "Your Name" is by the author!
+
+## 13.5 Interpreting logistic regression coefficients
+
+Here is a fitted model from the Bangladesh analysis predicting whether a person with high-arsenic drinking water will switch wells, given the arsenic level in their existing well and the distance to the nearest safe well:
+
+    stan_glm(formula = switch ~ dist100 + arsenic, family=binomial(link="logit"), data=wells)  
+                 Median MAD_SD  
+    (Intercept)   0.00   0.08  
+    dist100      -0.90   0.10  
+    arsenic       0.46   0.04  
+
+Compare two people who live the same distance from the nearest well but whose arsenic levels differ, with one person having an arsenic level of 0.5 and the other person having a level of 1.0. You will estimate how much more likely this second person is to switch wells. Give an approximate estimate, standard error, 50% interval, and 95% interval, using two different methods:
+
+### (a)
+
+Use the divide-by-4 rule, based on the information from this regression output.
+
+Based on the divide-by-4 rule, we can divide 0.46 by 4 to get 0.115: a diﬀerence of 0.5 level in arsenic corresponds to no more than a 0.5 × 11.5% = 5.75% positive diﬀerence in the probability of switching wells.
+
+### (b)
+
+Use predictive simulation from the fitted model in R, under the assumption that these two people each live 50 meters from the nearest safe well.
+
+```{r}
+library(LaplacesDemon)
+library(rstanarm)
+set.seed(111)
+wells<-read.csv('https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Arsenic/data/wells.csv')
+m0<-stan_glm(switch~dist100+arsenic,family=binomial(link = 'logit'),data = wells,refresh=0)
+dist50<-data.frame(dist100=c(0.5,0.5),aresnic=c(0.5,1))
+pred<-posterior_epred(m0,data=dist50)
+print(c(mean(pred),sd(pred)))
+
+linpred<-posterior_linpred(m0,dist50)
+print(c(mean(linpred),sd(linpred)))
+
+quantile(invlogit(wells$dist100*0.5+wells$arsenic)-invlogit(wells$dist100*0.5+wells$arsenic*0.5),c(0.25,0.75))
+
+quantile(invlogit(wells$dist100*0.5+wells$arsenic)-invlogit(wells$dist100*0.5+wells$arsenic*0.5),c(0.025, 0.975))
+```
+
+## 13.7 Graphing a fitted logistic regression
+
+We downloaded data with weight (in pounds) and age (in years) from a random sample of American adults. We then defined a new variable:
+
+    heavy <- weight > 200
+
+and fit a logistic regression, predicting heavy from `height` (in inches):
+
+    stan_glm(formula = heavy ~ height, family=binomial(link="logit"), data=health)  
+                  Median MAD_SD  
+    (Intercept)  -21.51   1.60  
+    height         0.28   0.02  
+
+### (a)
+
+Graph the logistic regression curve (the probability that someone is heavy) over the approximate range of the data. Be clear where the line goes through the 50% probability point.
+
+```{r}
+curve(invlogit(-21.51+0.28*x),xlim = c(40,110),ylab = 'Probability that someone is heacy',xlab = 'Heigh(inches)')
+```
+
+### (b)
+
+Fill in the blank: near the 50% point, comparing two people who differ by one inch in height, you'll expect a difference of \_\_*7%* in the probability of being heavy.
+
+## 13.8 Linear transformations
+
+In the regression from the previous exercise, suppose you replaced height in inches by height in centimeters. What would then be the intercept and slope?
+
+#Because 1 inch = 2.54 centimeters. So after replacing height in inches by height in centimeters, the intercept will not change and the slope will be 1/2.54 of the former one.
+
+## 13.10 Expressing a comparison of proportions as a logistic regression
+
+A randomized experiment is performed within a survey, and 1000 people are contacted. Half the people contacted are promised a \$5 incentive to participate, and half are not promised an incentive. The result is a 50% response rate among the treated group and 40% response rate among the control group.
+
+### (a)
+
+Set up these results as data in R. From these data, fit a logistic regression of response on the treatment indicator.
+
+```{r}
+set.seed(123)
+n <- 1000
+z <- rep(c(1,0),c(n/2,n/2))
+y <- rep(c(1,0,1,0),c(0.5,0.5,0.4,0.6)*n/2)
+library("rstanarm")
+fit <- stan_glm(y~z, family=binomial(link="logit"))
+print(fit)
+```
+
+### (b)
+
+Compare to the results from Exercise 4.1.
+
+#The two results are consistent according to the divide-by-4 rule.
+
+## 13.11 Building a logistic regression model
+
+The folder `Rodents` contains data on rodents in a sample of New York City apartments.
+
+### (a)
+
+Build a logistic regression model to predict the presence of rodents (the variable `rodent2` in the dataset) given indicators for the ethnic groups (`race`). Combine categories as appropriate. Discuss the estimated coefficients in the model.
+
+```{r}
+set.seed(1234)
+df <- read.csv("http://www.stat.columbia.edu/~gelman/arm/examples/rodents/hvs02_sorted.csv")
+head(df)
+df$hispanic_Mean10 <- df$hispanic_Mean * 10
+df$black_Mean10 <- df$black_Mean * 10
+
+fit1 <- glm(rodent2 ~ race + hispanic_Mean10 + black_Mean10, data=df, family=binomial(link="logit"))
+print(fit1)
+
+
+```
+
+#Intercept: an apartment where white (non-hispanic) people live, situated in an area with average black and hispanic population, has probability 6.14% of having rodent infestation in the building
+
+#race: this is the coefficient for race (on the logit scale) if any other predictor is at its average value. Being a factor, we can see how different races differ in terms of predicting the outcome.
+
+#hispanic_Mean10: a 10% increase in hispanic presence in the district is associated with a 6.3% increase in probability that the building is infestated by roditors, when the race of the people living in the flat is white (non-hispanic)
+
+#black_Mean10: as on the previous coefficient, a flat occupied by whites, with average hispanic presence in the district, is 4.3% more likely to be infestated if the ratio of black people living in the district is 10% higher
+
+### (b)
+
+Add to your model some other potentially relevant predictors describing the apartment, building, and community district. Build your model using the general principles explained in Section 12.6. Discuss the coefficients for the ethnicity indicators in your model.
+
+```{r}
+set.seed(2022)
+fit2 <- glm(rodent2 ~ race + hispanic_Mean10 + black_Mean10 + old + housing, data=df, family=binomial(link="logit"))
+print(fit2)
+```
+
+#Intercept: a public flat built after 1947, occupied by white people and owned by a non-foreign born individual, located in the Bronx borough in a discrict of average black and hispanic presence, and an average number of persons per room, has a probability of to be in a building infested by rats
+
+#race: at the mean level of all other predictors, any non white race has a higher probability to be associated with a building infestated by rodents. As on the previous model, Puerto Ricans, Blacks and Hispanics are more likely than other races to live in such conditions
+
+#hispanic_Mean10: at the mean level of all other predictors, a 10% increase in hispanic population in the district is associated with 5.62% more likelihood to live in a building infestated by rodents
+
+#black_Mean10: at the mean level of all other predictors, a 10% increase in black population in the district is associated with a 4.22% higher probability to live in a building infestated by rodents
+
+#old: at the mean level of all other predictors, buildings built before 1947 have 15.90% more likely to have rats infestations
+
+#housing: holding all other predictors at their mean level, privately owned apartments are 5.64% less likely to have rodents infestations
+
+## 14.3 Graphing logistic regressions
+
+The well-switching data described in Section 13.7 are in the folder `Arsenic`.
+
+### (a)
+
+Fit a logistic regression for the probability of switching using log (distance to nearest safe well) as a predictor.
+
+```{r}
+set.seed(1111)
+wells<-read.csv('https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Arsenic/data/wells.csv')
+fit14.3<-stan_glm(wells$switch~log(wells$dist),family = binomial(link = 'logit'),refresh=0)
+print(fit14.3)
+
+```
+
+### (b)
+
+Make a graph similar to Figure 13.8b displaying Pr(switch) as a function of distance to nearest safe well, along with the data.
+
+```{r}
+library("rprojroot")
+jitter_binary <- function(a, jitt=.05){
+a + (1-2*a)*runif(length(a),0,jitt)
+}
+plot(c(0,max(log(wells$dist), na.rm=TRUE)*1.02), c(0,1),
+
+xlab="log distance (in meters) to nearest safe well", ylab="Pr (switching)",
+
+type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+curve(invlogit(coef(fit14.3)[1]+coef(fit14.3)[2]*x), lwd=1, add=TRUE)
+points(log(wells$dist), jitter_binary(wells$switch), pch=20, cex=.1)
+
+```
+
+### (c)
+
+Make a residual plot and binned residual plot as in Figure 14.8.
+
+```{r}
+pred <- fitted(fit14.3)
+plot(c(0,1), c(-1,1), xlab="Estimated Pr (switching)", ylab="Observed - estimated",
+
+type="n", main="Residual plot", mgp=c(2,.5,0))
+abline(0,0, col="gray", lwd=.5)
+points(pred, wells$switch-pred, pch=20, cex=.2)
+
+
+```
+
+```{r}
+binned_resids <- function (x, y, nclass=sqrt(length(x))){
+breaks.index <- floor(length(x)*(1:(nclass-1))/nclass)
+breaks <- c (-Inf, sort(x)[breaks.index], Inf)
+output <- NULL
+xbreaks <- NULL
+x.binned <- as.numeric (cut (x, breaks))
+
+for (i in 1:nclass){
+items <- (1:length(x))[x.binned==i]
+x.range <- range(x[items])
+xbar <- mean(x[items])
+ybar <- mean(y[items])
+n <- length(items)
+sdev <- sd(y[items])
+output <- rbind (output, c(xbar, ybar, n, x.range, 2*sdev/sqrt(n)))
+}
+colnames (output) <- c ("xbar", "ybar", "n", "x.lo", "x.hi", "2se")
+return (list (binned=output, xbreaks=xbreaks))
+}
+br8 <- binned_resids(pred, wells$switch-pred, nclass=40)$binned
+plot(range(br8[,1]), range(br8[,2],br8[,6],-br8[,6]),
+
+xlab="Estimated Pr (switching)", ylab="Average residual",type="n", main="Binned residual plot", mgp=c(2,.5,0))
+abline(0,0, col="gray", lwd=.5)
+lines(br8[,1], br8[,6], col="gray", lwd=.5)
+lines(br8[,1], -br8[,6], col="gray", lwd=.5)
+points(br8[,1], br8[,2], pch=20, cex=.5)
+
+```
+
+### (d)
+
+Compute the error rate of the fitted model and compare to the error rate of the null model.
+
+```{r}
+error_rate_null <- mean(round(abs(wells$switch-mean(pred))))
+round(error_rate_null, 3)
+
+error_rate <- mean(round(abs(wells$switch-pred)))
+round(error_rate, 3)
+
+```
+
+### (e)
+
+Create indicator variables corresponding to `dist < 100`; `dist` between 100 and 200; and `dist > 200`. Fit a logistic regression for Pr(switch) using these indicators. With this new model, repeat the computations and graphs for part (a) of this exercise.
+
+```{r}
+indicator<-NULL
+indicator[wells$dist<100]<-0
+
+indicator[wells$dist>100&wells$dist<200]<-1
+
+indicator[wells$dist>200]<-2
+
+indicator<-as.factor(indicator)
+fit14.3_e<-stan_glm(wells$switch~indicator,family = binomial(link = 'logit'),refresh=0)
+print(fit14.3_e)
+
+```
+
+## 14.7 Model building and comparison
+
+Continue with the well-switching data described in the previous exercise.
+
+### (a)
+
+Fit a logistic regression for the probability of switching using, as predictors, distance, log(arsenic), and their interaction. Interpret the estimated coefficients and their standard errors.
+
+```{r}
+library(xtable)
+set.seed(222)
+wells<-read.csv('https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Arsenic/data/wells.csv')
+fit14.7 <- glm(switch ~ dist + log(arsenic) + dist*log(arsenic), family=binomial(link="logit"), data=wells)
+print(fit14.7)
+
+```
+
+a)  The intercept indicated when other variables are 0 the probability of switching is logit−1 (0.49) = 0.6201 = 62.01%.
+
+b)  The dist indicated every 10 meters change in the distance will decrease the probability of switching by 0.25%. −0.014 = −0.0025 = −0.25%
+
+c)  The log(arsenic) indicate 1 diﬀerence in arsenic concentration corresponds to a logit−1 (0.98) = 0.7271 positive diﬀerence in the logit probability of switching.
+
+d)  The dist:log(arsenic) indicate the interaction is zero, not interaction between these variables.
+
+### (b)
+
+Make graphs as in Figure 14.3 to show the relation between probability of switching, distance, and arsenic level.
+
+```{r}
+library(ggplot2)
+wells<-read.csv('https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Arsenic/data/wells.csv')
+ggplot(wells, aes(dist, switch)) +
+geom_jitter(position = position_jitter(height = 0.05)) +
+geom_smooth(method = "glm", family = "binomial")
+```
+
+### (c)
+
+Following the procedure described in Section 14.4, compute the average predictive differences corresponding to:
+
+i.  A comparison of `dist` = 0 to `dist` = 100, with `arsenic` held constant.\
+ii. A comparison of `dist` = 100 to `dist` = 200, with `arsenic` held constant.\
+iii. A comparison of `arsenic` = 0.5 to `arsenic` = 1.0, with `dist` held constant.\
+iv. A comparison of `arsenic` = 1.0 to `arsenic` = 2.0, with `dist` held constant.
+
+Discuss these results.
+
+```{r}
+fit_14.7c<- glm(switch ~ dist + log(arsenic) + dist*log(arsenic), family=binomial(link="logit"), data=wells)
+b <- coef(fit_14.7c)
+
+d_lo <- 0; d_hi <- 100
+
+diff_d1 <- invlogit(b[1] + b[2]*d_hi + b[3]*log(wells$arsenic) + b[4]*log(wells$arsenic)*d_hi) -
+invlogit(b[1] + b[2]*d_lo + b[3]*log(wells$arsenic) + b[4]*log(wells$arsenic)*d_lo)
+mean(diff_d1)
+
+d_lo <- 100; d_hi <- 200
+
+diff_d2 <- invlogit(b[1] + b[2]*d_hi + b[3]*log(wells$arsenic) + b[4]*log(wells$arsenic)*d_hi) -
+invlogit(b[1] + b[2]*d_lo + b[3]*log(wells$arsenic) + b[4]*log(wells$arsenic)*d_lo)
+mean(diff_d2)
+
+a_lo <- 0.5; a_hi <- 1.0
+
+diff_a1 <- invlogit(b[1] + b[2]*wells$dist + b[3]*a_hi + b[4]*wells$dist*a_hi) -
+invlogit(b[1] + b[2]*wells$dist + b[3]*a_lo + b[4]*wells$dist*a_lo)
+mean(diff_a1)
+
+a_lo <- 1.0; a_hi <- 2.0
+
+diff_a1 <- invlogit(b[1] + b[2]*wells$dist + b[3]*a_hi + b[4]*wells$dist*a_hi) -
+invlogit(b[1] + b[2]*wells$dist + b[3]*a_lo + b[4]*wells$dist*a_lo)
+mean(diff_a1)
+
+
+```

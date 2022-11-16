@@ -1,0 +1,272 @@
+---
+title: "MA678 Homework 6"
+author: "Yaquan Yang"
+date: "11/8/2022"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+library(ggplot2)
+library(knitr)
+library(arm)
+library(data.table)
+library(foreign)
+library(car)
+library(faraway)
+library(nnet)
+library(reshape2)
+library(VGAM)
+library(tidyverse)
+library(dplyr)
+library(rstanarm)
+```
+
+## Multinomial logit
+
+Using the individual-level survey data from the 2000 National Election Study (data in folder NES), predict party identification (which is on a five-point scale) using ideology and demographics with an ordered multinomial logit model.
+
+```{r, echo=FALSE}
+df <- read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/nes/nes5200_processed_voters_realideo.dta")
+df$partyid3 <- factor(df$partyid3, labels=c("democrats", "independents",
+                                            "republicans", "apolitical"))
+df$gender <- factor(df$gender, labels=c("male", "female"))
+df$race <- factor(df$race, labels=c("white", "black", "asian", 
+                                    "native american", "hispanic",
+                                    "other"))
+df$south <- factor(df$south)
+df$ideo <- factor(df$ideo, labels=c("liberal", "moderate", "conservative"))
+
+x = df$partyid3
+df <- df[!is.na(levels(x)[x]),]
+
+df <- subset(df, partyid3!="apolitical")
+df$partyid3 <- factor(df$partyid3)	
+```
+
+1.  Summarize the parameter estimates numerically and also graphically.
+
+```{r}
+multi.log <- polr(partyid3 ~ ideo + race + age_10, Hess=TRUE, data=df)	
+summary(multi.log)	
+```
+
+2.  Explain the results from the fitted model.
+
+```{r}
+confint(multi.log)
+```
+
+3.  Use a binned residual plot to assess the fit of the model.
+
+```{r}
+residuals(multi.log)	
+
+```
+
+## (Optional) Choice models
+
+Using the individual-level survey data from the election example described in Section 10.9 (data available in the folder NES),
+
+```{r}
+nes <- read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/nes/nes5200_processed_voters_realideo.dta")	
+
+```
+
+1.  Fit a logistic regression model for the choice of supporting Democrats or Republicans. Then interpret the output from this regression in terms of a utility/choice model.
+
+```{r}
+
+```
+
+2.  Repeat the previous exercise but now with three options: Democrat, no opinion, Republican. That is, fit an ordered logit model and then express it as a utility/choice mode
+
+```{r}
+
+```
+
+## Contingency table and ordered logit model
+
+In a prospective study of a new living attenuated recombinant vaccine for influenza, patients were randomly allocated to two groups, one of which was given the new vaccine and the other a saline placebo. The responses were titre levels of hemaglutinin inhibiting antibody found in the blood six weeks after vaccination; they were categorized as "small", "medium" or "large".
+
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrr}
+  \hline
+treatment & small & moderate & large & Total \\ 
+  \hline
+placebo &  25 &   8 &   5 & 38 \\ 
+ vaccine &   6 &  18 &  11 & 35 \\ 
+   \hline
+\end{tabular}
+\end{table}
+
+The cell frequencies in the rows of table are constrained to add to the number of subjects in each treatment group (35 and 38 respectively). We want to know if the pattern of responses is the same for each treatment group.
+
+```{r,echo=FALSE}
+cell_freq <- data.frame(treatment = factor(c("placebo", "vaccine")), 
+                        small = as.integer(c(25, 6)), 
+                        moderate = as.integer(c(8, 18)), 
+                        large = as.integer(c(5, 11)))
+
+```
+
+1.  Using a chi-square test and an appropriate log-linear model, test the hypothesis that the distribution of responses is the same for the placebo and vaccine groups.
+
+```{r}
+chi_test <- chisq.test(cell_freq[, 2:4])
+fit_cell <- vglm(cbind(small, moderate, large) ~ treatment, family = multinomial, data = cell_freq)	
+predict(fit_cell, data.frame(treatment = c("placebo")), type = "response")
+
+```
+
+2.  For the model corresponding to the hypothesis of homogeneity of response distributions, calculate the fitted values, the Pearson and deviance residuals, and the goodness of fit statistics $X^2$ and $D$. Which of the cells of the table contribute most to $X^2$ and $D$? Explain and interpret these results.
+
+```{r}
+round(coef(fit_cell), 2)
+cor(cell_freq[, 2:4], method = "pearson")
+residuals(fit_cell, type = "response")
+
+```
+
+3.  Re-analyze these data using ordered logit model (use `polr`) to estimate the cut-points of a latent continuous response variable and to estimate a location shift between the two treatment groups. Sketch a rough diagram to illustrate the model which forms the conceptual base for this analysis.
+
+```{r}
+cell_p <- rbind(data.frame(treatment = rep("placebo", 3), 
+                           response = c("small", "moderate", "large"), 
+                           Freq = c(25, 8, 5)), 
+                data.frame(treatment = rep("vaccine", 3), 
+                           response = c("small", "moderate", "large"), 
+                           Freq = c(6, 18, 11)
+                ))
+cell_p$response <- factor(cell_p$response, 
+                          levels = c("small", "moderate", "large"), 
+                          ordered = TRUE)
+fit_cell_polr <- polr(response ~  treatment, weights = Freq, data = cell_p)
+round(summary(fit_cell_polr)$coef, 2)
+predict(fit_cell_polr, newdata = data.frame(treatment = c("placebo", "vaccine")), type = "probs")
+cell_gen <- data.frame(x = seq(-5, 5, by = .01), 
+                       cut_samll_moderate = invlogit(-.57+1.84*seq(-5, 5, by = .01)), 
+                      cut_moderate_larger = invlogit(-2.44+1.84*seq(-5, 5, by = .01)))
+cell_gen <- cell_gen %>% melt(id.vars = "x" )
+ggplot(cell_gen) + 
+  geom_line(aes(x = x, y = value, color = variable))
+```
+
+## High School and Beyond
+
+The `hsb` data was collected as a subset of the High School and Beyond study conducted by the National Education Longitudinal Studies program of the National Center for Education Statistics. The variables are gender; race; socioeconomic status; school type; chosen high school program type; scores on reading, writing, math, science, and social studies. We want to determine which factors are related to the choice of the type of program---academic, vocational, or general---that the students pursue in high school. The response is multinomial with three levels.
+
+```{r}
+data(hsb)
+
+```
+
+1.  Fit a trinomial response model with the other relevant variables as predictors (untransformed).
+
+```{r}
+m1 <- multinom(prog ~ gender + race + ses + schtyp + read + write + math ++science + socst, hsb, trace = FALSE)
+summary(m1)
+
+```
+
+2.  For the student with id 99, compute the predicted probabilities of the three possible choices.
+
+```{r}
+predict(m1,type="probs")[99,]
+```
+
+## Happiness
+
+Data were collected from 39 students in a University of Chicago MBA class and may be found in the dataset `happy`.
+
+```{r}
+library(faraway)
+library(nnet)
+data(happy)
+```
+
+1.  Build a model for the level of happiness as a function of the other variables.
+
+```{r}
+reg.happy <- polr(factor(happy) ~ money + sex + love + work,data = happy)	
+
+summary(reg.happy)
+```
+
+2.  Interpret the parameters of your chosen model.
+
+```{r}
+confint(reg.happy)	
+```
+
+## The predictor "gender" seems to be less important.
+
+However, there is no need to discard any predictor.
+
+3.  Predict the happiness distribution for subject whose parents earn \$30,000 a year, who is lonely, not sexually active and has no job.
+
+```{r}
+predict(reg.happy,newdata = data.frame(love = 1,sex = 0,work = 1,money = 30),type = "probs")	
+
+```
+
+## Newspaper survey on Vietnam War
+
+A student newspaper conducted a survey of student opinions about the Vietnam War in May 1967. Responses were classified by sex, year in the program and one of four opinions. The survey was voluntary. The data may be found in the dataset `uncviet`. Treat the opinion as the response and the sex and year as predictors. Build a proportional odds model, giving an interpretation to the estimates.
+
+```{r}
+data(uncviet)
+
+```
+
+## Pneumonoconiosis of coal miners
+
+The pneumo data gives the number of coal miners classified by radiological examination into one of three categories of pneumonoconiosis and by the number of years spent working at the coal face divided into eight categories.
+
+```{r}
+library(faraway)	
+
+data(pneumo,package="faraway")	
+
+```
+
+1.  Treating the pneumonoconiosis status as response variable as nominal, build a model for predicting the frequency of the three outcomes in terms of length of service and use it to predict the outcome for a miner with 25 years of service.
+
+```{r}
+pneumo.reg <- multinom(status ~ year, data = pneumo)
+summary(pneumo.reg)	
+predict(pneumo.reg, data.frame (year = 25), type = "probs")	
+
+```
+
+2.  Repeat the analysis with the pneumonoconiosis status being treated as ordinal.
+
+```{r}
+pneumo.order <- polr(factor(status) ~ year, data = pneumo, Hess = TRUE)	
+
+summary(pneumo.order)	
+predict(pneumo.order, data.frame (year = 25), type = "probs")
+```
+
+3.  Now treat the response variable as hierarchical with top level indicating whether the miner has the disease and the second level indicating, given they have the disease, whether they have a moderate or severe case.
+
+```{r}
+pneumo$status.h <- ifelse(pneumo$status == "normal", 0, 1)	
+
+pneumo.sub <- as.data.frame(cbind(Freq = pneumo$Freq, normal = ifelse(pneumo$status == "normal",1,0), mild = ifelse(pneumo$status == "mild",1,0), severe = ifelse(pneumo$status == "severe",1,0), year = pneumo$year,disease = pneumo$status.h))	
+
+pneumo.hie <- multinom(cbind(normal,mild,severe) ~ year, data = pneumo.sub)	
+summary(pneumo.hie)	
+predict(pneumo.hie, data.frame(year = 25), type = "probs")	
+
+```
+
+4.  Compare the three analyses.
+
+### 
+
+mild about 0.08-0.10, normal about 0.78-0.83, and severe about 0.08-0.12.
